@@ -29,10 +29,11 @@ applicable (the story reviewer scores these under C4):
 - **Network and access:** no public endpoints; people get in through IAM
   Identity Center; no IAM users or long-lived access keys.
 - **Encryption:** data at rest uses the ABC Bank account's customer-managed KMS keys.
-- **Cost:** anything billed by the hour (RDS, DMS, EC2) has a teardown
-  check, and the session's cost is recorded.
-- **Tagging:** every AWS resource carries `data-product`, `environment`,
-  `owner`, `cost-center`.
+- **Cost:** anything billed by the hour (RDS, DMS, EC2, interface endpoints)
+  is a session resource: it has a teardown check, and the session's cost is
+  recorded. Long-lived resources state their monthly cost.
+- **Tagging:** every AWS resource carries the four cost tags, with the values
+  under "Coding standards".
 - **Downstream compatibility:** effect on CDC to the Offers Platform (DMS needs
   primary keys; schema changes reach the platform's intake).
 
@@ -46,7 +47,7 @@ Extra blocking rules (fail the gate whatever the score):
 
 | Path | What it holds |
 |------|---------------|
-| `infra/` | Terraform for the ABC Bank AWS account |
+| `infra/` | Terraform for the ABC Bank AWS account, split into roots by lifecycle (see "Terraform roots") |
 | `core-banking/` | Postgres schema: numbered SQL migrations, validation checks |
 | `data-generator/` | Scale-factor synthetic data generator (Python) |
 | `cdc/` | DMS endpoints and tasks |
@@ -81,16 +82,36 @@ local Postgres (docker) for SQL tests.
 ## Coding standards
 
 - Python follows `.claude/factory/standards/python-style.md`.
-- Terraform: `terraform fmt`; one root per account under `infra/`; variables
-  and outputs documented; region `us-east-1`; no hard-coded account IDs.
+- Terraform: `terraform fmt`; variables and outputs documented; region
+  `us-east-1`; no hard-coded account IDs; roots find each other's resources by
+  name, alias or tag, not by hard-coded IDs.
+- Cost tags and their values: `data-product = abc-bank`, `environment = dev`,
+  `owner = Lakshmi100`, `cost-center = offers-platform-portfolio`.
 - SQL: one numbered migration per change (`0001_create_customers.sql`),
   never edited once merged.
+
+## Terraform roots
+
+The account has **one state bucket** (created by `infra/bootstrap/`) and
+**several Terraform roots**, each with its own state key in that bucket,
+split by how long their resources live:
+
+| Kind | Example | Lifecycle |
+|------|---------|-----------|
+| Bootstrap | `infra/bootstrap/` | Applied once; creates the state bucket |
+| Long-lived | `infra/foundation/` (KMS key, network) | Stays between sessions; near-zero monthly cost; never destroyed by a session |
+| Session | `infra/core-banking-db/` | Created for a working session and destroyed after it |
+
+Anything billed by the hour belongs in a session root. Destroying a session
+root never touches another root's resources.
 
 ## Definition of done (additions)
 
 - `terraform validate` and `terraform fmt -check` pass for every changed root.
-- For stories that create AWS resources: `terraform destroy` was run, nothing
-  billable is left, and the session's cost is in the PR.
+- Session roots: `terraform destroy` was run, nothing billable with the
+  story's tags is left, and the session's cost is in the PR.
+- Long-lived roots: the PR states the monthly cost, and `terraform plan`
+  shows no changes after apply.
 
 ## Boundaries (additions)
 
