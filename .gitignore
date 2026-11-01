@@ -1,0 +1,19 @@
+.DS_Store
+# Personal working notes and Office lock files - kept local
+*.docx
+~$*
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+
+# Python
+__pycache__/
+.venv/
+.pytest_cache/
+
+# Local secrets
+.env
